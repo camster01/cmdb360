@@ -22,6 +22,13 @@ export default function Center360() {
   const [selectedDimId, setSelectedDimId] = useState<string>('');
   const [selectedItemId, setSelectedItemId] = useState<string>('');
 
+  // Default dimension to "Computer" on first load if nothing is selected yet
+  useEffect(() => {
+    if (appData.dimensions.length === 0 || selectedDimId) return;
+    const computerDim = appData.dimensions.find(d => d.name === 'Computer' && d.visible);
+    if (computerDim) setSelectedDimId(computerDim.id);
+  }, [appData.dimensions]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (focusedItem) {
       setSelectedDimId(focusedItem.dimensionId);
