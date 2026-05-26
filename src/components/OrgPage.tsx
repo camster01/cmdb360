@@ -1,7 +1,53 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { utils, writeFile } from 'xlsx';
 import { useApp } from '../context/AppContext';
 import { api } from '../api';
 import { OrgNode, OrgData, ContentItem, Dimension } from '../types';
+
+// ── Excel export helpers ──────────────────────────────────────────────────────
+
+function collectAllItems(node: OrgNode, items: ContentItem[]): ContentItem[] {
+  return [
+    ...items.filter(i => i.org_node_id === node.id),
+    ...node.children.flatMap(c => collectAllItems(c, items)),
+  ];
+}
+
+function exportOrgToExcel(
+  node: OrgNode,
+  allItems: ContentItem[],
+  dimensions: Dimension[],
+  getPath: (id: string) => OrgNode[],
+) {
+  const items = collectAllItems(node, allItems);
+  if (items.length === 0) return;
+
+  const rows = items.map(item => {
+    const path = item.org_node_id ? getPath(item.org_node_id) : [];
+    const dim = dimensions.find(d => d.id === item.dimensionId);
+    return {
+      'Location':       path.map(n => n.name).join(' › '),
+      'Dimension':      dim?.name ?? '',
+      'Serial # / Code': item.code,
+      'Description':    item.description,
+      'Order #':        item.order_number ?? '',
+      'Note':           item.details ?? '',
+      'Created':        new Date(item.createdAt).toLocaleDateString(),
+    };
+  });
+
+  const ws = utils.json_to_sheet(rows);
+
+  // Auto-width columns
+  const colWidths = Object.keys(rows[0] ?? {}).map(key => ({
+    wch: Math.max(key.length, ...rows.map(r => String(r[key as keyof typeof r] ?? '').length)) + 2,
+  }));
+  ws['!cols'] = colWidths;
+
+  const wb = utils.book_new();
+  utils.book_append_sheet(wb, ws, 'Items');
+  writeFile(wb, `${node.name.replace(/[^a-z0-9]/gi, '_')}-items.xlsx`);
+}
 
 // ── Tree state helpers ────────────────────────────────────────────────────────
 
@@ -95,6 +141,7 @@ interface BrowseInfo {
   items: ContentItem[];
   dimensions: Dimension[];
   onSelectItem: (itemId: string) => void;
+  onExport: (node: OrgNode) => void;
 }
 
 // ── Single org node row (recursive) ───────────────────────────────────────────
@@ -171,12 +218,27 @@ function NodeRow({ node, depth, labels, canEdit, isAdmin, onAddChild, onUpdate, 
             {hasCustomChildLabel && !canEdit && (
               <span className="text-xs text-indigo-400 italic mr-1 flex-shrink-0">({childLabel}s)</span>
             )}
-            {/* Item count badge (browse mode) */}
-            {browseInfo && directItems.length > 0 && (
-              <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 mr-1">
-                {directItems.length}
-              </span>
-            )}
+            {/* Item count badge + export button (browse mode) */}
+            {browseInfo && (() => {
+              const totalCount = collectAllItems(node, browseInfo.items).length;
+              if (totalCount === 0) return null;
+              return (
+                <span className="flex items-center gap-1 flex-shrink-0 mr-1">
+                  <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full font-medium">
+                    {totalCount}
+                  </span>
+                  <button
+                    onClick={e => { e.stopPropagation(); browseInfo.onExport(node); }}
+                    title={`Export all ${totalCount} ${totalCount === 1 ? 'entry' : 'entries'} under ${node.name} to Excel`}
+                    className="text-gray-400 hover:text-green-600 transition-colors"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                      <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                    </svg>
+                  </button>
+                </span>
+              );
+            })()}
             {descendants > 0 && (
               <span className="text-xs text-gray-300 flex-shrink-0 mr-1">{descendants}</span>
             )}
@@ -383,7 +445,7 @@ export default function OrgPage({
   onClose: () => void;
   pickerMode?: PickerMode;
 }) {
-  const { currentUser, currentSystem, appData, setFocusedItemId } = useApp();
+  const { currentUser, currentSystem, appData, setFocusedItemId, getOrgNodePath } = useApp();
   // In picker mode, disable editing regardless of role
   const canEdit = !pickerMode && (currentUser?.role === 'admin' || currentUser?.role === 'contributor');
   const isAdmin = !pickerMode && currentUser?.role === 'admin';
@@ -399,6 +461,10 @@ export default function OrgPage({
   const [labelsSaving, setLabelsSaving] = useState(false);
 
   // Build browseInfo when in browse mode
+  const handleExport = useCallback((node: OrgNode) => {
+    exportOrgToExcel(node, appData.items, appData.dimensions, getOrgNodePath);
+  }, [appData.items, appData.dimensions, getOrgNodePath]);
+
   const browseInfo: BrowseInfo | undefined = browseMode && !pickerMode ? {
     items: appData.items,
     dimensions: appData.dimensions,
@@ -406,6 +472,7 @@ export default function OrgPage({
       setFocusedItemId(itemId);
       onClose();
     },
+    onExport: handleExport,
   } : undefined;
 
   const topLabel = orgData.labels[0] ?? 'Node';
