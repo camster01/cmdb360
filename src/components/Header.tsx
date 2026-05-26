@@ -28,7 +28,7 @@ export default function Header({ onOrgClick, onStockClick }: { onOrgClick?: () =
         <span className="text-white font-semibold text-lg tracking-wide">CMDB</span>
         <span className="text-blue-300 font-bold text-lg">360</span>
         <sup className="text-blue-300 text-xs">°</sup>
-        <span className="text-red-500 text-xs font-semibold ml-1">V1.1.1</span>
+        <span className="text-red-500 text-xs font-semibold ml-1">V1.2.0</span>
       </div>
 
       {/* Center: System selector */}
