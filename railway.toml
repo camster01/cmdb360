@@ -1,0 +1,8 @@
+[build]
+buildCommand = "npm install && npm run build:all"
+
+[deploy]
+startCommand = "npm run start"
+healthcheckPath = "/api/settings"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
