@@ -76,6 +76,19 @@ export const api = {
   getSettings: () => request('GET', '/settings'),
   updateSetting: (key: string, value: string) => request('PUT', `/settings/${key}`, { value }),
 
+  // Dimension field definitions
+  getDimensionFields: (dimensionId: string) =>
+    request('GET', `/fields?dimensionId=${encodeURIComponent(dimensionId)}`, undefined, true),
+  createDimensionField: (f: object) => request('POST', '/fields', f, true),
+  updateDimensionField: (id: string, f: object) => request('PUT', `/fields/${id}`, f, true),
+  deleteDimensionField: (id: string) => request('DELETE', `/fields/${id}`, undefined, true),
+
+  // Item field values
+  getItemFieldValues: (itemId: string) =>
+    request('GET', `/fields/values/${itemId}`, undefined, true),
+  saveItemFieldValues: (itemId: string, values: Record<string, string>) =>
+    request('PUT', `/fields/values/${itemId}`, { values }, true),
+
   // Org hierarchy (unlimited depth)
   getOrg: () => request('GET', '/org', undefined, true),
   saveOrgLabels: (labels: string[]) => request('PUT', '/org/labels', { labels }, true),

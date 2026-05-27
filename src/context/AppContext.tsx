@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { User, ContentItem, Relationship, Dimension, System, SystemMember, OrgNode, OrgData } from '../types';
+import { User, ContentItem, Relationship, Dimension, System, SystemMember, OrgNode, OrgData, DimensionField } from '../types';
 import { api, setCurrentSystemId } from '../api';
 
 // ── Org path helper ───────────────────────────────────────────────────────────
@@ -59,6 +59,13 @@ interface AppContextValue {
   loadUsers: () => Promise<User[]>;
   getRelatedItems: (itemId: string) => Map<string, ContentItem[]>;
   siteTitle: string;
+  // Dimension fields
+  getDimensionFields: (dimensionId: string) => Promise<DimensionField[]>;
+  createDimensionField: (f: { dimensionId: string; fieldName: string; fieldType: string; sortOrder?: number }) => Promise<DimensionField>;
+  updateDimensionField: (id: string, updates: { fieldName?: string; fieldType?: string; sortOrder?: number }) => Promise<DimensionField>;
+  deleteDimensionField: (id: string, dimensionId: string) => Promise<void>;
+  getItemFieldValues: (itemId: string) => Promise<Record<string, string>>;
+  saveItemFieldValues: (itemId: string, values: Record<string, string>) => Promise<void>;
   // Modal state
   modalSearch: boolean;
   setModalSearch: (v: boolean) => void;
@@ -102,6 +109,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [focusedItemId, setFocusedItemId] = useState<string | null>('chg-459');
   const [systems, setSystems] = useState<System[]>([]);
   const [currentSystem, setCurrentSystem] = useState<System | null>(null);
+  const [dimFieldsCache, setDimFieldsCache] = useState<Map<string, DimensionField[]>>(new Map());
 
   // Modal state
   const [modalSearch, setModalSearch] = useState(false);
@@ -296,6 +304,56 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return api.getUsers() as Promise<User[]>;
   }, []);
 
+  const getDimensionFields = useCallback(async (dimensionId: string): Promise<DimensionField[]> => {
+    const cached = dimFieldsCache.get(dimensionId);
+    if (cached) return cached;
+    const fields = await api.getDimensionFields(dimensionId) as DimensionField[];
+    setDimFieldsCache(prev => new Map(prev).set(dimensionId, fields));
+    return fields;
+  }, [dimFieldsCache]);
+
+  const createDimensionField = useCallback(async (f: { dimensionId: string; fieldName: string; fieldType: string; sortOrder?: number }): Promise<DimensionField> => {
+    const field = await api.createDimensionField(f) as DimensionField;
+    setDimFieldsCache(prev => {
+      const next = new Map(prev);
+      const existing = next.get(f.dimensionId) ?? [];
+      next.set(f.dimensionId, [...existing, field].sort((a, b) => a.sortOrder - b.sortOrder));
+      return next;
+    });
+    return field;
+  }, []);
+
+  const updateDimensionField = useCallback(async (id: string, updates: { fieldName?: string; fieldType?: string; sortOrder?: number }): Promise<DimensionField> => {
+    const field = await api.updateDimensionField(id, updates) as DimensionField;
+    setDimFieldsCache(prev => {
+      const next = new Map(prev);
+      const existing = next.get(field.dimensionId);
+      if (existing) {
+        next.set(field.dimensionId, existing.map(f => f.id === id ? field : f).sort((a, b) => a.sortOrder - b.sortOrder));
+      }
+      return next;
+    });
+    return field;
+  }, []);
+
+  const deleteDimensionField = useCallback(async (id: string, dimensionId: string): Promise<void> => {
+    await api.deleteDimensionField(id);
+    setDimFieldsCache(prev => {
+      const next = new Map(prev);
+      const existing = next.get(dimensionId);
+      if (existing) next.set(dimensionId, existing.filter(f => f.id !== id));
+      return next;
+    });
+  }, []);
+
+  const getItemFieldValues = useCallback(async (itemId: string): Promise<Record<string, string>> => {
+    return api.getItemFieldValues(itemId) as Promise<Record<string, string>>;
+  }, []);
+
+  const saveItemFieldValues = useCallback(async (itemId: string, values: Record<string, string>): Promise<void> => {
+    await api.saveItemFieldValues(itemId, values);
+  }, []);
+
   const getRelatedItems = useCallback((itemId: string): Map<string, ContentItem[]> => {
     const result = new Map<string, ContentItem[]>();
     const rels = appData.relationships.filter(r => r.item1Id === itemId || r.item2Id === itemId);
@@ -320,6 +378,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addUser, deleteUser, updateUser, loadUsers,
     getRelatedItems,
     siteTitle,
+    getDimensionFields, createDimensionField, updateDimensionField, deleteDimensionField,
+    getItemFieldValues, saveItemFieldValues,
     modalSearch, setModalSearch,
     modalContentDetail, setModalContentDetail,
     modalAddContent, setModalAddContent,

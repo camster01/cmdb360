@@ -15,6 +15,7 @@ import settingsRouter from './routes/settings';
 import chatRouter from './routes/chat';
 import systemsRouter from './routes/systems';
 import orgRouter from './routes/org';
+import fieldsRouter from './routes/fields';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3002');
@@ -33,6 +34,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/systems', systemsRouter);
 app.use('/api/org', orgRouter);
+app.use('/api/fields', fieldsRouter);
 
 // Serve built React frontend (production)
 const distPath = path.join(__dirname, '../../dist');

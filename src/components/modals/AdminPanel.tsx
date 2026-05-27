@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { useApp } from '../../context/AppContext';
-import { SystemMember } from '../../types';
+import { SystemMember, DimensionField } from '../../types';
 
 export default function AdminPanel() {
   const {
@@ -10,6 +10,7 @@ export default function AdminPanel() {
     addUser, deleteUser, updateUser, loadUsers,
     loadSystemMembers, setSystemMemberRole, removeSystemMember,
     setAdminPanel,
+    getDimensionFields, createDimensionField, updateDimensionField, deleteDimensionField,
   } = useApp();
 
   const isAdmin = currentUser?.role === 'admin';
@@ -71,6 +72,59 @@ export default function AdminPanel() {
       await updateDimension(editingDimId, { name: dimName.trim(), subtitle: dimSubtitle.trim(), slot: newSlot });
       setEditingDimId(null);
     } catch { /* stay editable */ }
+  };
+
+  // Fields panel state
+  const [fieldsPanelDimId, setFieldsPanelDimId] = useState<string | null>(null);
+  const [panelFields, setPanelFields] = useState<DimensionField[]>([]);
+  const [panelFieldsLoading, setPanelFieldsLoading] = useState(false);
+  const [newFieldName, setNewFieldName] = useState('');
+  const [newFieldType, setNewFieldType] = useState<'text' | 'textarea' | 'date'>('text');
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [editFieldName, setEditFieldName] = useState('');
+  const [editFieldType, setEditFieldType] = useState<'text' | 'textarea' | 'date'>('text');
+
+  const openFieldsPanel = async (dimId: string) => {
+    if (fieldsPanelDimId === dimId) { setFieldsPanelDimId(null); return; }
+    setFieldsPanelDimId(dimId);
+    setPanelFieldsLoading(true);
+    const fields = await getDimensionFields(dimId);
+    setPanelFields(fields);
+    setPanelFieldsLoading(false);
+    setNewFieldName('');
+    setNewFieldType('text');
+    setEditingFieldId(null);
+  };
+
+  const handleAddField = async (dimId: string) => {
+    if (!newFieldName.trim()) return;
+    const field = await createDimensionField({
+      dimensionId: dimId,
+      fieldName: newFieldName.trim(),
+      fieldType: newFieldType,
+      sortOrder: panelFields.length,
+    });
+    setPanelFields(prev => [...prev, field]);
+    setNewFieldName('');
+    setNewFieldType('text');
+  };
+
+  const handleDeleteField = async (field: DimensionField) => {
+    if (!window.confirm(`Delete field "${field.fieldName}"? This also removes all stored values.`)) return;
+    await deleteDimensionField(field.id, field.dimensionId);
+    setPanelFields(prev => prev.filter(f => f.id !== field.id));
+  };
+
+  const startEditField = (field: DimensionField) => {
+    setEditingFieldId(field.id);
+    setEditFieldName(field.fieldName);
+    setEditFieldType(field.fieldType);
+  };
+
+  const saveEditField = async (field: DimensionField) => {
+    const updated = await updateDimensionField(field.id, { fieldName: editFieldName.trim(), fieldType: editFieldType });
+    setPanelFields(prev => prev.map(f => f.id === field.id ? updated : f));
+    setEditingFieldId(null);
   };
 
   // Users tab — system members
@@ -224,7 +278,7 @@ export default function AdminPanel() {
             Edit dimension names, subtitles, and positions. Positions 1–4 appear in the left column, 5–8 in the right column (top to bottom).
           </p>
           {sortedDims.map(dim => (
-            <div key={dim.id} className="border border-gray-200 rounded p-3">
+            <div key={dim.id} className={`border rounded p-3 ${fieldsPanelDimId === dim.id ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'}`}>
               {editingDimId === dim.id ? (
                 <div className="space-y-2">
                   <div className="flex gap-2 items-center">
@@ -281,7 +335,107 @@ export default function AdminPanel() {
                         className="text-xs text-blue-600 hover:text-blue-800 px-2 py-0.5 border border-blue-300 rounded hover:bg-blue-50">
                         Edit
                       </button>
+                      <button onClick={() => openFieldsPanel(dim.id)}
+                        className={`text-xs px-2 py-0.5 border rounded transition-colors ${
+                          fieldsPanelDimId === dim.id
+                            ? 'border-indigo-400 text-indigo-700 bg-indigo-50'
+                            : 'border-indigo-300 text-indigo-600 hover:bg-indigo-50'
+                        }`}>
+                        Fields
+                      </button>
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* Fields panel — expands inline when "Fields" is clicked */}
+              {fieldsPanelDimId === dim.id && (
+                <div className="mt-3 pt-3 border-t border-blue-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-indigo-700">
+                      Metadata Fields
+                    </span>
+                    <span className="text-xs text-gray-400">{panelFields.length} field{panelFields.length !== 1 ? 's' : ''}</span>
+                  </div>
+
+                  {panelFieldsLoading ? (
+                    <div className="text-xs text-gray-400 py-2">Loading…</div>
+                  ) : (
+                    <>
+                      {/* Field list */}
+                      {panelFields.length === 0 ? (
+                        <div className="text-xs text-gray-400 italic mb-3">No custom fields yet.</div>
+                      ) : (
+                        <div className="space-y-1 mb-3">
+                          {panelFields.map(field => (
+                            <div key={field.id} className="flex items-center gap-2 bg-white border border-gray-200 rounded px-2 py-1.5">
+                              {editingFieldId === field.id ? (
+                                <>
+                                  <input
+                                    type="text"
+                                    value={editFieldName}
+                                    onChange={e => setEditFieldName(e.target.value)}
+                                    className="flex-1 border border-gray-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500"
+                                    onKeyDown={e => { if (e.key === 'Enter') saveEditField(field); if (e.key === 'Escape') setEditingFieldId(null); }}
+                                    autoFocus
+                                  />
+                                  <select
+                                    value={editFieldType}
+                                    onChange={e => setEditFieldType(e.target.value as 'text' | 'textarea' | 'date')}
+                                    className="border border-gray-300 rounded px-1 py-0.5 text-xs focus:outline-none focus:border-blue-500 bg-white"
+                                  >
+                                    <option value="text">Text</option>
+                                    <option value="textarea">Textarea</option>
+                                    <option value="date">Date</option>
+                                  </select>
+                                  <button onClick={() => saveEditField(field)}
+                                    className="text-xs text-green-600 hover:text-green-800 px-1">✓</button>
+                                  <button onClick={() => setEditingFieldId(null)}
+                                    className="text-xs text-gray-400 hover:text-gray-600 px-1">✕</button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="flex-1 text-xs text-gray-700">{field.fieldName}</span>
+                                  <span className="text-xs text-gray-400 bg-gray-100 rounded px-1.5 py-0.5">{field.fieldType}</span>
+                                  <button onClick={() => startEditField(field)}
+                                    className="text-xs text-blue-500 hover:text-blue-700 px-1">Edit</button>
+                                  <button onClick={() => handleDeleteField(field)}
+                                    className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add new field */}
+                      <div className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={newFieldName}
+                          onChange={e => setNewFieldName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleAddField(dim.id); }}
+                          placeholder="New field name…"
+                          className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-400"
+                        />
+                        <select
+                          value={newFieldType}
+                          onChange={e => setNewFieldType(e.target.value as 'text' | 'textarea' | 'date')}
+                          className="border border-gray-300 rounded px-1 py-1 text-xs focus:outline-none focus:border-indigo-400 bg-white"
+                        >
+                          <option value="text">Text</option>
+                          <option value="textarea">Textarea</option>
+                          <option value="date">Date</option>
+                        </select>
+                        <button
+                          onClick={() => handleAddField(dim.id)}
+                          disabled={!newFieldName.trim()}
+                          className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded transition-colors"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               )}

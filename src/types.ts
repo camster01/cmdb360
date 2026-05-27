@@ -41,6 +41,14 @@ export interface ContentItem {
   updatedAt: string;
 }
 
+export interface DimensionField {
+  id: string;
+  dimensionId: string;
+  fieldName: string;
+  fieldType: 'text' | 'textarea' | 'date';
+  sortOrder: number;
+}
+
 export interface Relationship {
   id: string;
   item1Id: string;

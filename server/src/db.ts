@@ -126,6 +126,28 @@ export async function initDb(): Promise<void> {
     )
   `);
 
+  // Configurable metadata fields per dimension
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS dimension_fields (
+      id VARCHAR(20) PRIMARY KEY,
+      dimension_id VARCHAR(20) REFERENCES dimensions(id) ON DELETE CASCADE,
+      field_name VARCHAR(200) NOT NULL,
+      field_type VARCHAR(50) NOT NULL DEFAULT 'text',
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Values for dimension metadata fields per content item
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS item_field_values (
+      item_id VARCHAR(20) REFERENCES content_items(id) ON DELETE CASCADE,
+      field_id VARCHAR(20) REFERENCES dimension_fields(id) ON DELETE CASCADE,
+      value TEXT,
+      PRIMARY KEY (item_id, field_id)
+    )
+  `);
+
   // Migration: create default system from existing site_title
   await pool.query(`
     INSERT INTO systems (id, name, description)
